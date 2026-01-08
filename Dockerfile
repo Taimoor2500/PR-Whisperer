@@ -19,9 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the current directory contents into the container
 COPY . .
 
-# Expose the port FastAPI runs on
-EXPOSE 8000
+# Expose the port Hugging Face expects
+EXPOSE 7860
 
-# Command to run the application
-CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the application on port 7860
+CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "7860"]
 

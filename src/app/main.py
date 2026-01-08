@@ -158,5 +158,7 @@ async def analyze_github_pull_request(owner: str, repo: str, pr_number: int):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Default to 7860 for Hugging Face compatibility
+    port = int(os.getenv("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 

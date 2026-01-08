@@ -36,20 +36,21 @@ PR Whisperer is a bot designed to help pull requests get reviewed and merged fas
     uvicorn src.app.main:app --reload
     ```
 
-## Deployment (Koyeb + Supabase)
+## Deployment (Hugging Face Spaces + Supabase)
 
 1.  **Supabase**: Create a free project and get the **Connection String (URI)**.
-2.  **Koyeb**: 
-    - Create a new **App**.
-    - Connect your GitHub repo.
-    - Select **Docker** as the deployment method (it will automatically use the included `Dockerfile`).
-    - Set **Environment Variables**:
+2.  **Hugging Face Spaces**:
+    - Create a new **Space** ([huggingface.co/new-space](https://huggingface.co/new-space)).
+    - SDK: **Docker** (Blank).
+    - Go to **Settings** -> **Connect to GitHub** and link your repo.
+    - Go to **Settings** -> **Variables and secrets** and add:
         - `DATABASE_URL`: Your Supabase URI.
         - `SLACK_BOT_TOKEN`: Your xoxb token.
         - `GITHUB_TOKEN`: Your GitHub PAT.
         - `GEMINI_API_KEY`: (Optional).
-3.  **Keep it Awake**: 
-    - If your Koyeb instance hibernates, use [cron-job.org](https://cron-job.org/) to ping your root URL (`https://your-app-name.koyeb.app/`) every 10 minutes.
+3.  **Slack Integration**:
+    - Once deployed, your URL will be `https://[YOUR-USERNAME]-[SPACE-NAME].hf.space`.
+    - Set your Slack Event Subscription Request URL to: `https://[YOUR-USERNAME]-[SPACE-NAME].hf.space/slack/events`.
 
 ## API Endpoints
 
