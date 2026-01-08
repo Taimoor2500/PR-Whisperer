@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+pydantic-ai
+httpx
+python-dotenv
+python-multipart
+pydantic-ai[gemini]
+
