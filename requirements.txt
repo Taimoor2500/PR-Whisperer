@@ -6,4 +6,6 @@ httpx
 python-dotenv
 python-multipart
 pydantic-ai[gemini]
+sqlalchemy
+psycopg2-binary
 
