@@ -31,7 +31,11 @@ async def root():
 
 @app.post("/slack/events")
 async def slack_events(request: Request, background_tasks: BackgroundTasks):
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        # Fallback for non-JSON requests
+        return {"status": "error", "message": "invalid json"}
     
     # Handle Slack URL Verification (Challenge)
     if data.get("type") == "url_verification":
