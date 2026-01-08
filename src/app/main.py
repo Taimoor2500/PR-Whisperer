@@ -24,7 +24,10 @@ GITHUB_PR_REGEX = r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)"
 
 @app.get("/")
 async def root():
-    return {"message": "PR Whisperer is active!"}
+    """
+    Health check endpoint to keep the app awake on Render free tier.
+    """
+    return {"message": "PR Whisperer is active!", "status": "healthy"}
 
 @app.post("/slack/events")
 async def slack_events(request: Request, background_tasks: BackgroundTasks):
