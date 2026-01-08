@@ -1,3 +1,12 @@
+---
+title: PR Whisperer
+emoji: 🤫
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # PR Whisperer
 
 PR Whisperer is a bot designed to help pull requests get reviewed and merged faster.
