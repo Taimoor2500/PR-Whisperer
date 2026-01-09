@@ -56,22 +56,27 @@ async def request_copilot_review(repo_owner: str, repo_name: str, pr_number: int
     
     url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/pulls/{pr_number}/requested_reviewers"
     
+    # Try different possible Copilot bot names
+    copilot_names = ["Copilot", "copilot", "github-copilot[bot]", "copilot[bot]"]
+    
     async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                url, 
-                headers=headers,
-                json={"reviewers": ["copilot"]}
-            )
-            if response.status_code in [201, 200]:
-                print(f"Copilot review requested for {repo_owner}/{repo_name}#{pr_number}")
-                return True
-            else:
-                print(f"Failed to request Copilot review: {response.status_code} - {response.text}")
-                return False
-        except Exception as e:
-            print(f"Error requesting Copilot review: {e}")
-            return False
+        for bot_name in copilot_names:
+            try:
+                response = await client.post(
+                    url, 
+                    headers=headers,
+                    json={"reviewers": [bot_name]}
+                )
+                if response.status_code in [201, 200, 422]:  # 422 might mean already requested
+                    print(f"Copilot review requested for {repo_owner}/{repo_name}#{pr_number} using '{bot_name}'")
+                    return True
+                else:
+                    print(f"Tried '{bot_name}': {response.status_code} - {response.text[:200]}")
+            except Exception as e:
+                print(f"Error with '{bot_name}': {e}")
+        
+        print(f"All Copilot reviewer names failed for {repo_owner}/{repo_name}#{pr_number}")
+        return False
 
 
 async def get_potential_reviewers(repo_owner: str, repo_name: str, exclude_user: str) -> List[str]:
