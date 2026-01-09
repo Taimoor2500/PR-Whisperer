@@ -42,6 +42,38 @@ async def get_github_pr(repo_owner: str, repo_name: str, pr_number: int) -> Opti
             changed_filenames=changed_filenames
         )
 
+async def request_copilot_review(repo_owner: str, repo_name: str, pr_number: int) -> bool:
+    """Request a GitHub Copilot code review for the PR."""
+    token = os.getenv("GITHUB_TOKEN")
+    if not token:
+        print("GitHub token not set, cannot request Copilot review")
+        return False
+    
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
+    
+    url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/pulls/{pr_number}/requested_reviewers"
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                url, 
+                headers=headers,
+                json={"reviewers": ["copilot"]}
+            )
+            if response.status_code in [201, 200]:
+                print(f"Copilot review requested for {repo_owner}/{repo_name}#{pr_number}")
+                return True
+            else:
+                print(f"Failed to request Copilot review: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            print(f"Error requesting Copilot review: {e}")
+            return False
+
+
 async def get_potential_reviewers(repo_owner: str, repo_name: str, exclude_user: str) -> List[str]:
     token = os.getenv("GITHUB_TOKEN")
     headers = {}

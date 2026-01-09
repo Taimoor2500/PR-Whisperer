@@ -15,7 +15,7 @@ init_db()
 from src.app.models import PRMetadata, PRAnalysisOutput
 from src.app.agents.pr_agent import get_pr_analysis
 from src.app.services.slack import send_slack_message, post_thread_reply
-from src.app.services.github import get_github_pr, get_potential_reviewers
+from src.app.services.github import get_github_pr, get_potential_reviewers, request_copilot_review
 
 app = FastAPI(title="PR Whisperer")
 
@@ -110,6 +110,9 @@ async def process_multiple_prs(matches: list, channel: str, thread_ts: str):
                 analysis = get_pr_analysis(pr_metadata, suggested_reviewers=reviewers)
                 analyses.append((pr_metadata, analysis))
                 
+                # Trigger Copilot review
+                await request_copilot_review(owner, repo, pr_number)
+                
                 # Save Reminder to DB (2 days later) for each PR
                 reminder_time = datetime.now() + timedelta(days=2)
                 new_reminder = PRReminder(
@@ -158,6 +161,7 @@ def format_consolidated_summary(analyses: list) -> str:
         lines.append("")
     
     lines.append(f"{'─' * 40}")
+    lines.append("🤖 Copilot review requested for all PRs!")
     lines.append("⏰ I'll nudge you in 2 days if any of these are still open!")
     
     return "\n".join(lines)
@@ -188,7 +192,8 @@ def format_single_pr(pr_metadata, analysis) -> str:
         for hint in analysis.improvement_hints:
             lines.append(f"  • {hint}")
     
-    lines.append("\n⏰ I'll nudge you in 2 days if this is still open!")
+    lines.append("\n🤖 Copilot review requested!")
+    lines.append("⏰ I'll nudge you in 2 days if this is still open!")
     
     return "\n".join(lines)
 
