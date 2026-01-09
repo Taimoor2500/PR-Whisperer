@@ -188,8 +188,7 @@ def format_single_pr(pr_metadata, analysis) -> str:
         for hint in analysis.improvement_hints:
             lines.append(f"  • {hint}")
     
-    lines.append("\n🤖 Copilot review requested!")
-    lines.append("⏰ I'll nudge you in 2 days if this is still open!")
+    lines.append("\n⏰ I'll nudge you in 2 days if this is still open!")
     
     return "\n".join(lines)
 
