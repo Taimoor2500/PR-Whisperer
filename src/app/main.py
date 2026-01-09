@@ -49,13 +49,13 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         channel = event.get("channel")
         thread_ts = event.get("ts") # Current message timestamp acts as thread ID
         
-        match = re.search(GITHUB_PR_REGEX, text)
-        if match:
-            owner, repo, pr_number = match.groups()
-            # Process analysis in the background
+        # Find ALL PR links in the message
+        matches = re.findall(GITHUB_PR_REGEX, text)
+        if matches:
+            # Process all PRs together in the background
             background_tasks.add_task(
-                process_slack_pr_link, 
-                owner, repo, int(pr_number), channel, thread_ts
+                process_multiple_prs, 
+                matches, channel, thread_ts
             )
             
     return {"status": "ok"}
@@ -94,33 +94,103 @@ async def reminder_checker_loop():
         
         await asyncio.sleep(60 * 60) # Check once an hour
 
-async def process_slack_pr_link(owner: str, repo: str, pr_number: int, channel: str, thread_ts: str):
-    # 1. Fetch & Analyze PR
-    pr_metadata = await get_github_pr(owner, repo, pr_number)
-    if pr_metadata:
-        # Fetch real potential reviewers
-        reviewers = await get_potential_reviewers(owner, repo, exclude_user=pr_metadata.author)
-        analysis = get_pr_analysis(pr_metadata, suggested_reviewers=reviewers)
+async def process_multiple_prs(matches: list, channel: str, thread_ts: str):
+    """Process multiple PR links and send a single consolidated summary."""
+    analyses = []
+    db = SessionLocal()
+    
+    try:
+        for owner, repo, pr_number in matches:
+            pr_number = int(pr_number)
+            
+            # Fetch & Analyze each PR
+            pr_metadata = await get_github_pr(owner, repo, pr_number)
+            if pr_metadata:
+                reviewers = await get_potential_reviewers(owner, repo, exclude_user=pr_metadata.author)
+                analysis = get_pr_analysis(pr_metadata, suggested_reviewers=reviewers)
+                analyses.append((pr_metadata, analysis))
+                
+                # Save Reminder to DB (2 days later) for each PR
+                reminder_time = datetime.now() + timedelta(days=2)
+                new_reminder = PRReminder(
+                    owner=owner,
+                    repo=repo,
+                    pr_number=pr_number,
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    reminder_time=reminder_time
+                )
+                db.add(new_reminder)
         
-        # 2. Reply in Thread
-        post_thread_reply(channel, thread_ts, analysis)
+        db.commit()
+    finally:
+        db.close()
+    
+    # Send a single consolidated message
+    if analyses:
+        consolidated_message = format_consolidated_summary(analyses)
+        post_thread_reply(channel, thread_ts, text=consolidated_message)
+
+
+def format_consolidated_summary(analyses: list) -> str:
+    """Format multiple PR analyses into a single message."""
+    if len(analyses) == 1:
+        # Single PR - use the standard format
+        pr_metadata, analysis = analyses[0]
+        return format_single_pr(pr_metadata, analysis)
+    
+    # Multiple PRs - create a consolidated summary
+    lines = [f"📦 *{len(analyses)} PRs detected!* Here's the breakdown:\n"]
+    
+    for i, (pr_metadata, analysis) in enumerate(analyses, 1):
+        lines.append(f"{'─' * 40}")
+        lines.append(f"*#{i} — <{pr_metadata.url}|{pr_metadata.title}>*")
+        lines.append(f"👤 Author: `{pr_metadata.author}` | 📊 +{pr_metadata.lines_added}/-{pr_metadata.lines_removed}")
+        lines.append(f"📝 {analysis.summary}")
         
-        # 3. Save Reminder to DB (2 days later)
-        db = SessionLocal()
-        try:
-            reminder_time = datetime.now() + timedelta(days=2)
-            new_reminder = PRReminder(
-                owner=owner,
-                repo=repo,
-                pr_number=pr_number,
-                channel=channel,
-                thread_ts=thread_ts,
-                reminder_time=reminder_time
-            )
-            db.add(new_reminder)
-            db.commit()
-        finally:
-            db.close()
+        # Show detected signals (blockers/warnings)
+        blockers = [s for s in analysis.signals if s.detected]
+        if blockers:
+            lines.append(f"⚠️ Signals: {', '.join(s.name for s in blockers)}")
+        
+        if analysis.suggested_reviewers:
+            lines.append(f"👀 Reviewers: {', '.join(analysis.suggested_reviewers[:3])}")
+        lines.append("")
+    
+    lines.append(f"{'─' * 40}")
+    lines.append("⏰ I'll nudge you in 2 days if any of these are still open!")
+    
+    return "\n".join(lines)
+
+
+def format_single_pr(pr_metadata, analysis) -> str:
+    """Format a single PR analysis."""
+    lines = [
+        f"🔍 *PR Analysis: <{pr_metadata.url}|{pr_metadata.title}>*\n",
+        f"📝 {analysis.summary}\n",
+    ]
+    
+    # Signals
+    detected = [s for s in analysis.signals if s.detected]
+    if detected:
+        lines.append("*Signals Detected:*")
+        for signal in detected:
+            lines.append(f"  • {signal.name}: {signal.message}")
+        lines.append("")
+    
+    # Reviewers
+    if analysis.suggested_reviewers:
+        lines.append(f"👀 *Suggested Reviewers:* {', '.join(analysis.suggested_reviewers)}\n")
+    
+    # Hints
+    if analysis.improvement_hints:
+        lines.append("💡 *Tips:*")
+        for hint in analysis.improvement_hints:
+            lines.append(f"  • {hint}")
+    
+    lines.append("\n⏰ I'll nudge you in 2 days if this is still open!")
+    
+    return "\n".join(lines)
 
 @app.post("/analyze", response_model=PRAnalysisOutput)
 async def analyze_pull_request(pr: PRMetadata):
