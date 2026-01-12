@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
-from src.app.database import init_db, SessionLocal, PRReminder
+from src.app.database import init_db, SessionLocal, PRReminder, get_slack_user_id, set_user_mapping
 
 # Load environment variables before importing other local modules
 load_dotenv()
@@ -21,6 +21,10 @@ app = FastAPI(title="PR Whisperer")
 
 # Regex to detect GitHub PR URLs
 GITHUB_PR_REGEX = r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+
+# Regex to detect link command: "link @slackuser githubusername"
+# Slack user mentions look like <@U12345678> in the raw text
+LINK_COMMAND_REGEX = r"^link\s+<@([A-Z0-9]+)>\s+(\S+)\s*$"
 
 @app.get("/")
 async def root():
@@ -49,6 +53,23 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         channel = event.get("channel")
         thread_ts = event.get("ts") # Current message timestamp acts as thread ID
         
+        # Check for link command first: "link @slackuser githubusername"
+        link_match = re.match(LINK_COMMAND_REGEX, text.strip(), re.IGNORECASE)
+        if link_match:
+            slack_user_id, github_username = link_match.groups()
+            success = set_user_mapping(github_username, slack_user_id)
+            if success:
+                post_thread_reply(
+                    channel, thread_ts,
+                    text=f"✅ Linked! GitHub `{github_username}` → <@{slack_user_id}>"
+                )
+            else:
+                post_thread_reply(
+                    channel, thread_ts,
+                    text=f"❌ Failed to save mapping. Please try again."
+                )
+            return {"status": "ok"}
+        
         # Find ALL PR links in the message
         matches = re.findall(GITHUB_PR_REGEX, text)
         if matches:
@@ -65,6 +86,14 @@ async def startup_event():
     # Start the reminder checker loop
     asyncio.create_task(reminder_checker_loop())
 
+def format_user_mention(github_username: str) -> str:
+    """Convert GitHub username to Slack mention if mapping exists."""
+    slack_user_id = get_slack_user_id(github_username)
+    if slack_user_id:
+        return f"<@{slack_user_id}>"
+    return f"`{github_username}`"  # Fallback to code-formatted GitHub username
+
+
 async def reminder_checker_loop():
     while True:
         db = SessionLocal()
@@ -79,10 +108,11 @@ async def reminder_checker_loop():
                 # Re-fetch PR to see if it's still open
                 updated_pr = await get_github_pr(reminder.owner, reminder.repo, reminder.pr_number)
                 if updated_pr and updated_pr.review_status == "open":
+                    author_mention = format_user_mention(updated_pr.author)
                     post_thread_reply(
                         reminder.channel, 
                         reminder.thread_ts, 
-                        text=f"⏰ Quick nudge! This PR is still open. Any blockers, @{updated_pr.author}?"
+                        text=f"⏰ Quick nudge! This PR is still open. Any blockers, {author_mention}?"
                     )
                 
                 reminder.is_sent = True
@@ -143,9 +173,10 @@ def format_consolidated_summary(analyses: list) -> str:
     lines = [f"📦 *{len(analyses)} PRs detected!* Here's the breakdown:\n"]
     
     for i, (pr_metadata, analysis) in enumerate(analyses, 1):
+        author_mention = format_user_mention(pr_metadata.author)
         lines.append(f"{'─' * 40}")
         lines.append(f"*#{i} — <{pr_metadata.url}|{pr_metadata.title}>*")
-        lines.append(f"👤 Author: `{pr_metadata.author}` | 📊 +{pr_metadata.lines_added}/-{pr_metadata.lines_removed}")
+        lines.append(f"👤 Author: {author_mention} | 📊 +{pr_metadata.lines_added}/-{pr_metadata.lines_removed}")
         lines.append(f"📝 {analysis.summary}")
         
         # Show detected signals (blockers/warnings)

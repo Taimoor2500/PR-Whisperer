@@ -85,4 +85,3 @@ def post_thread_reply(channel: str, thread_ts: str, analysis: PRAnalysisOutput =
             httpx.post(webhook_url, json=payload)
         except Exception as e:
             print(f"Failed to post Slack thread reply via Webhook: {e}")
-
